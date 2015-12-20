@@ -13,7 +13,7 @@
 | .DAT      |               |
 | .DRV      |               |
 | .EXE      |               |
-| .GDV      |               |
+| .GDV      | [GDV][GDV]    |
 | .INI      |               |
 | .MTX      |               |
 | .PIF      |               |
@@ -35,3 +35,4 @@
 For loading into IDA, choose file type *Linear Executable (LE) [lx.ldw]*
 
 [DAS]: ./DAS.md
+[GDV]: ./GDV.md
