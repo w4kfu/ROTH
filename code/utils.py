@@ -26,3 +26,14 @@ def build_palette(palette, out="out.png"):
             y = (y + 32)
             x = 0
     im.save(out)
+    
+# Take a 768 byte table of int
+def conv_build_palette(palette, out="out.png"):
+    if len(palette) != 768:
+        return
+    new_palette = []
+    for i in xrange(0, len(palette), 3):
+        new_palette.append((palette[i] * 255) / 63)
+        new_palette.append((palette[i + 1] * 255) / 63)
+        new_palette.append((palette[i + 2] * 255) / 63)
+    build_palette(new_palette, out)
