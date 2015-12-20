@@ -2,6 +2,7 @@ import os
 import construct
 
 from utils import conv_build_palette
+from utils import hexdump
 
 FILENAME = "D:\Game\Realms of the Haunting\DATA\GDV\GREMLOGO.GDV"
 
@@ -63,7 +64,7 @@ GDVHeader = construct.Struct("GDVHeader",
     ImageType,                                                      # + 0x0E
     construct.ULInt16("Frame_size"),                                # + 0x10
     construct.ULInt8("unk_byte_00"),                                # + 0x12
-    construct.ULInt8("Losiness"),                                   # + 0x13
+    construct.ULInt8("Lossyness"),                                  # + 0x13
     construct.ULInt16("Frame_width"),                               # + 0x14
     construct.ULInt16("Frame_height"),                              # + 0x16
     construct.Anchor("end_GDVHeader"),
@@ -93,7 +94,11 @@ GDVHeader = construct.Struct("GDVHeader",
             construct.Value("value", lambda ctx: ctx["start_chunks"])
         ),
         # Video Frame Header
-        construct.OnDemandPointer(lambda ctx: ctx.start_vfh, VideoFrameHeader)
+        construct.Pointer(lambda ctx: ctx.start_vfh, VideoFrameHeader),
+        construct.Value("start_video_data", lambda ctx: ctx["start_vfh"] + 0x08),
+        construct.OnDemandPointer(lambda ctx: ctx.start_video_data,
+            construct.Array(lambda ctx: compute_amount_of_audio_data(ctx) + ctx["VideoFrameHeader"]["Length"], construct.ULInt8("Video_data"))
+        ),
         
 )
 
@@ -110,6 +115,82 @@ def compute_amount_of_audio_data(gs):
         amount = amount >> 1
     return amount
     
+# sub_4BB62
+# dseg03:000918A4 Table_delta_modulation dd 100h dup(?)
+def compute_delta_modulation():
+    delta_table = []
+    delta_table.append(0)
+    delta = 0
+    code = 0x40
+    step = 0x2D
+    for i in xrange(0, 256 - 2, 2):
+        delta = delta + (code >> 5)
+        code = code + step
+        step = step + 2
+        delta_table.append(delta)
+        delta_table.append((-delta) & 0xFFFFFFFF)
+    delta_table.append((delta + (code >> 5)))
+    #print len(delta_table)
+    #print delta_table
+    return delta_table
+    
+def parse_audio_data(buf, left_state, right_state):
+    delta_table = compute_delta_modulation()
+    fd_out = open("test.bin", "a+b")
+    import struct
+    for i in xrange(0, len(buf) / 2, 2):
+        left_state = (left_state + (delta_table[ord(buf[i])]) & 0xFFFFFFFF) & 0xFFFFFFFF
+        right_state = (right_state + (delta_table[ord(buf[i + 1])]) & 0xFFFFFFFF) & 0xFFFFFFFF
+        
+        #for j in xrange(0, 4):
+        #    fwave.writeframes(struct.pack("<H", left_state & 0xFFFF))
+        #    fwave.writeframes(struct.pack("<H", right_state & 0xFFFF))
+        
+        for j in xrange(0, 4):
+            fd_out.write(struct.pack(">H", (left_state) & 0xFFFF))
+            fd_out.write(struct.pack(">H", (right_state) & 0xFFFF))
+        
+        #
+        #fd_out.write(struct.pack("<H", left_state & 0xFFFF))
+        #fd_out.write(struct.pack("<H", right_state & 0xFFFF))
+        #
+        #fd_out.write(struct.pack("<H", left_state & 0xFFFF))
+        #fd_out.write(struct.pack("<H", right_state & 0xFFFF))
+        #fd_out.write(struct.pack("<H", left_state & 0x7FFF))
+        #fd_out.write(struct.pack("<H", right_state & 0x7FFF))
+        #fd_out.write(struct.pack("<H", left_state & 0x7FFF))
+        #fd_out.write(struct.pack("<H", right_state & 0x7FFF))
+        #fd_out.write(struct.pack("<H", left_state & 0x7FFF))
+        #fd_out.write(struct.pack("<H", right_state & 0x7FFF))
+    fd_out.close()
+    #print hexdump(buf[0x00:0x100])
+    #exit(0)
+    return left_state, right_state
+    
+def parse_all_frames(gs, buf):
+    #import wave
+    #f = wave.open('test.wav', 'w')
+    #f.setparams((2, 2, 44100, 170, "NONE", "Uncompressed"))
+    fd_out = open("test.bin", "wb")
+    left_state = 0
+    right_state = 0
+    fd_out.close()
+    offset = gs["start_chunks"]
+    amount_of_audio_data = compute_amount_of_audio_data(gs)
+    for i in xrange(0, gs["Nb_frames"]):
+        #print "[+] Actual offset : 0x%08X" % offset
+        audio_data = buf[offset:offset + amount_of_audio_data]
+        offset += amount_of_audio_data
+        s = VideoFrameHeader.parse(buf[offset: offset + 0x08])
+        if (s["TypeFlags"] & 0x40) == 0:
+            left_state = 0
+            right_state = 0
+        left_state, right_state = parse_audio_data(audio_data, left_state, right_state)
+        offset += s["Length"] + 0x08
+        #print s
+    #print "[+] Actual offset : 0x%08X" % offset
+    #f.close()
+    
 fd = open(FILENAME, "rb")
 buf = fd.read()
 gs = GDVHeader.parse(buf)
@@ -118,12 +199,17 @@ gs = GDVHeader.parse(buf)
 
 print gs
 
-print gs["VideoFrameHeader"].read()
+#print gs["VideoFrameHeader"].read()
 
 #print gs["Audio_data"].read()
 
 #print "[+] start_chunks = 0x%08X" % (gs["start_chunks"])
-#print "[+] compute_amount_of_audio_data = 0x%08X" % (compute_amount_of_audio_data(gs))
+print "[+] compute_amount_of_audio_data = 0x%08X" % (compute_amount_of_audio_data(gs))
+
+print len(gs["Video_data"].read())
+
+parse_all_frames(gs, buf)
+#compute_delta_modulation()
 
 #print gs["SoundFlags"]["AudioPresent"]
 #print gs["SoundFlags"]["AudioChannels"]
